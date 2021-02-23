@@ -1,0 +1,49 @@
+version: 2.1
+
+jobs:
+  deploy-heroku:
+    machine: true
+    steps:
+      - checkout
+      - run:
+          name: Build and push Docker image to Heroku
+          command: |
+            export HEROKU_API_KEY=$HEROKU_API_KEY
+            sudo curl https://cli-assets.heroku.com/install.sh | sh
+            heroku container:login
+            heroku container:push --arg VERSION=0.0.1,APP_NAME=rumbleparty -a $HEROKU_APP_NAME web
+            heroku container:release -a $HEROKU_APP_NAME web
+  build:
+    working_directory: ~/app # directory where steps will run
+    docker:
+      - image: circleci/clojure:lein-2.8.1
+    environment:
+      LEIN_ROOT: nbd
+      JVM_OPTS: -Xmx3200m # limit the maximum heap size to prevent out of memory errors
+    steps:
+      - checkout
+      - restore_cache:
+          key: film-ratings-{{ checksum "project.clj" }}
+      - run: lein deps
+      - save_cache:
+          paths:
+            - ~/.m2
+          key: film-ratings-{{ checksum "project.clj" }}
+      - run: lein do test, uberjar
+      - persist_to_workspace:
+          root: ~/app
+          paths:
+            - target
+workflows:
+  version: 2.1
+  develop:
+    jobs:
+      - build:
+          context: app
+      - deploy-heroku:
+          context: app
+          requires:
+            - build
+          filters:
+            branches:
+              only: master
